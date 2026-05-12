@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SalesPulse — AI Forecast Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #050810;
+    --surface: #0d1117;
+    --panel: #111827;
+    --border: #1e2d40;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --accent: #38bdf8;
+    --accent2: #818cf8;
+    --green: #34d399;
+    --red: #f87171;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+    --glow: 0 0 30px rgba(56,189,248,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── Animated Background ─── */
+  .bg-canvas {
+    position: fixed; inset: 0; z-index: 0;
+    background: radial-gradient(ellipse at 20% 20%, rgba(56,189,248,0.04) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(129,140,248,0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(10,14,26,1) 0%, #050810 100%);
+  }
+
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    animation: gridDrift 20s linear infinite;
+  }
+
+  @keyframes gridDrift {
+    from { transform: translate(0, 0); }
+    to { transform: translate(40px, 40px); }
+  }
+
+  .particle {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: float linear infinite;
+    z-index: 0;
+  }
+
+  @keyframes float {
+    0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 0.6; }
+    100% { transform: translateY(-100px) rotate(720deg); opacity: 0; }
+  }
+
+  /* ─── Layout ─── */
+  .app { position: relative; z-index: 1; }
+
+  /* ─── Header ─── */
+  header {
+    padding: 1.5rem 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: rgba(13,17,23,0.8);
+    backdrop-filter: blur(20px);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+    box-shadow: var(--glow);
+    animation: logoPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes logoPulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(56,189,248,0.3); }
+    50% { box-shadow: 0 0 40px rgba(56,189,248,0.6), 0 0 60px rgba(129,140,248,0.2); }
+  }
+
+  .logo span { color: var(--accent); }
+
+  .header-status {
+    display: flex; align-items: center; gap: 1.5rem;
+  }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+
+  .status-badge.live {
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.3);
+    color: var(--green);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green);
+    animation: blink 1.5s ease-in-out infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  .run-btn {
+    padding: 0.6rem 1.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 8px;
+    color: #050810; font-weight: 700; font-size: 0.85rem;
+    cursor: pointer; transition: all 0.2s;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .run-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(56,189,248,0.4); }
+  .run-btn:active { transform: translateY(0); }
+  .run-btn.loading { opacity: 0.7; cursor: not-allowed; }
+
+  /* ─── Main Grid ─── */
+  main {
+    padding: 2rem 2.5rem;
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  /* ─── KPI Cards ─── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1rem;
+  }
+
+  .kpi-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    position: relative; overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s;
+    animation: cardIn 0.6s ease-out both;
+  }
+
+  .kpi-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--card-accent, linear-gradient(90deg, var(--accent), var(--accent2)));
+  }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .kpi-card:nth-child(1) { animation-delay: 0.1s; --card-accent: linear-gradient(90deg, #38bdf8, #818cf8); }
+  .kpi-card:nth-child(2) { animation-delay: 0.2s; --card-accent: linear-gradient(90deg, #34d399, #38bdf8); }
+  .kpi-card:nth-child(3) { animation-delay: 0.3s; --card-accent: linear-gradient(90deg, #a78bfa, #818cf8); }
+  .kpi-card:nth-child(4) { animation-delay: 0.4s; --card-accent: linear-gradient(90deg, #fb923c, #f87171); }
+  .kpi-card:nth-child(5) { animation-delay: 0.5s; --card-accent: linear-gradient(90deg, #34d399, #a78bfa); }
+
+  .kpi-label {
+    font-size: 0.72rem; color: var(--muted); letter-spacing: 1px;
+    text-transform: uppercase; font-weight: 600; margin-bottom: 0.6rem;
+  }
+
+  .kpi-value {
+    font-size: 1.9rem; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+    background: var(--card-accent, var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: countUp 1.5s ease-out both;
+  }
+
+  @keyframes countUp { from { opacity: 0; } to { opacity: 1; } }
+
+  .kpi-sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.4rem; }
+
+  .kpi-delta {
+    font-size: 0.72rem; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    margin-top: 0.3rem;
+  }
+  .kpi-delta.up { color: var(--green); }
+  .kpi-delta.down { color: var(--red); }
+
+  /* ─── Chart Cards ─── */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+  }
+
+  .chart-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    animation: cardIn 0.6s ease-out 0.3s both;
+    transition: border-color 0.2s;
+  }
+
+  .chart-card:hover { border-color: rgba(56,189,248,0.3); }
+
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.25rem;
+  }
+
+  .card-title {
+    font-size: 0.95rem; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; gap: 0.6rem;
+  }
+
+  .card-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+
+  .card-badge {
+    font-size: 0.68rem;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  canvas { max-height: 280px; }
+
+  /* ─── Metrics Table ─── */
+  .metrics-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  .metric-table {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    animation: cardIn 0.6s ease-out 0.5s both;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  th {
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--muted);
+    padding: 0.5rem 0.75rem; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 0.75rem; font-size: 0.85rem;
+    border-bottom: 1px solid rgba(30,45,64,0.5);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .metric-winner {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.25);
+    border-radius: 4px;
+    font-size: 0.7rem; color: var(--green);
+  }
+
+  /* ─── Terminal Log ─── */
+  .log-panel {
+    background: #050810;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.25rem 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    animation: cardIn 0.6s ease-out 0.6s both;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .log-line { padding: 0.15rem 0; display: flex; gap: 0.75rem; }
+  .log-time { color: var(--muted); }
+  .log-msg.info { color: var(--accent); }
+  .log-msg.success { color: var(--green); }
+  .log-msg.warn { color: var(--orange); }
+  .log-msg.error { color: var(--red); }
+
+  /* ─── Loading Overlay ─── */
+  .loading-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(5,8,16,0.85);
+    backdrop-filter: blur(8px);
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 1.5rem;
+  }
+
+  .loading-overlay.active { display: flex; }
+
+  .spinner {
+    width: 60px; height: 60px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    color: var(--accent); font-size: 0.95rem;
+    font-family: 'JetBrains Mono', monospace;
+    animation: blink 1.2s ease-in-out infinite;
+  }
+
+  /* ─── Model selector ─── */
+  .model-tabs {
+    display: flex; gap: 0.5rem;
+  }
+
+  .tab-btn {
+    padding: 0.35rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.78rem; font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent; color: var(--muted);
+    cursor: pointer; transition: all 0.2s;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .tab-btn.active, .tab-btn:hover {
+    background: rgba(56,189,248,0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ─── Forecast horizon selector ─── */
+  .horizon-select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+    font-family: 'Space Grotesk', sans-serif;
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 1200px) {
+    .kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .charts-row { grid-template-columns: 1fr; }
+    .metrics-row { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    header { padding: 1rem 1.25rem; }
+    main { padding: 1.25rem; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .logo span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Animated Background -->
+<div class="bg-canvas"></div>
+<div class="grid-bg"></div>
+<div id="particles"></div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">⚙ Initializing models...</div>
+</div>
+
+<div class="app">
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📈</div>
+      Sales<span>Pulse</span>
+    </div>
+    <div class="header-status">
+      <div class="status-badge live">
+        <div class="status-dot"></div>
+        API LIVE
+      </div>
+      <div class="model-tabs">
+        <button class="tab-btn active" data-model="both">Both</button>
+        <button class="tab-btn" data-model="arima">ARIMA</button>
+        <button class="tab-btn" data-model="lstm">LSTM</button>
+      </div>
+      <select class="horizon-select" id="horizonSelect">
+        <option value="7">7 Days</option>
+        <option value="14">14 Days</option>
+        <option value="30" selected>30 Days</option>
+        <option value="60">60 Days</option>
+        <option value="90">90 Days</option>
+      </select>
+      <button class="run-btn" id="runBtn" onclick="runForecast()">▶ Run Forecast</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+
+    <!-- KPI Cards -->
+    <div class="kpi-row" id="kpiRow">
+      <div class="kpi-card">
+        <div class="kpi-label">Dataset Rows</div>
+        <div class="kpi-value" id="kpiRows">—</div>
+        <div class="kpi-sub">Historical records</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">ARIMA MAE</div>
+        <div class="kpi-value" id="kpiArimaMae">—</div>
+        <div class="kpi-sub">Mean Abs. Error</div>
+        <div class="kpi-delta" id="kpiArimaDelta"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">LSTM MAE</div>
+        <div class="kpi-value" id="kpiLstmMae">—</div>
+        <div class="kpi-sub">Mean Abs. Error</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Best R²</div>
+        <div class="kpi-value" id="kpiBestR2">—</div>
+        <div class="kpi-sub">Coefficient of det.</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Forecast Days</div>
+        <div class="kpi-value" id="kpiForecastDays">30</div>
+        <div class="kpi-sub">Prediction horizon</div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-row">
+      <!-- Forecast Chart -->
+      <div class="chart-card">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-dot" style="background:var(--accent)"></div>
+            Sales Forecast Timeline
+          </div>
+          <div class="card-badge" id="forecastRunId">No run yet</div>
+        </div>
+        <canvas id="forecastChart"></canvas>
+      </div>
+
+      <!-- Metrics Radar -->
+      <div class="chart-card">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-dot" style="background:var(--purple)"></div>
+            Model Accuracy
+          </div>
+          <div class="card-badge">R² Score</div>
+        </div>
+        <canvas id="r2Chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Metrics Row -->
+    <div class="metrics-row">
+      <div class="metric-table">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-dot" style="background:var(--orange)"></div>
+            Evaluation Metrics
+          </div>
+        </div>
+        <table id="metricsTable">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>ARIMA</th>
+              <th>LSTM</th>
+              <th>Winner</th>
+            </tr>
+          </thead>
+          <tbody id="metricsBody">
+            <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:2rem">Run a forecast to see results</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Log Terminal -->
+      <div class="log-panel" id="logPanel">
+        <div class="log-line"><span class="log-time">00:00:00</span><span class="log-msg info">→ SalesPulse Dashboard initialized</span></div>
+        <div class="log-line"><span class="log-time">00:00:00</span><span class="log-msg info">→ Connecting to API at <span id="apiUrl"></span></span></div>
+        <div class="log-line"><span class="log-time">00:00:01</span><span class="log-msg success">✓ Ready. Click "Run Forecast" to begin.</span></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:8000'
+  : window.location.origin + '/api';
+
+document.getElementById('apiUrl').textContent = API_BASE;
+
+let forecastChart = null, r2Chart = null;
+let selectedModel = 'both';
+
+// ─── Particles ────────────────────────────────────────────────────────────────
+(function spawnParticles() {
+  const container = document.getElementById('particles');
+  for (let i = 0; i < 25; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const size = Math.random() * 3 + 1;
+    const hue = Math.random() > 0.5 ? '199, 89%, 67%' : '233, 90%, 73%';
+    p.style.cssText = `
+      width: ${size}px; height: ${size}px;
+      left: ${Math.random() * 100}vw;
+      background: hsla(${hue}, ${Math.random() * 0.4 + 0.1});
+      animation-duration: ${Math.random() * 15 + 10}s;
+      animation-delay: ${Math.random() * 10}s;
+    `;
+    container.appendChild(p);
+  }
+})();
+
+// ─── Model Tabs ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedModel = btn.dataset.model;
+  });
+});
+
+// ─── Log Helper ───────────────────────────────────────────────────────────────
+function addLog(msg, type = 'info') {
+  const panel = document.getElementById('logPanel');
+  const now = new Date().toTimeString().slice(0, 8);
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${now}</span><span class="log-msg ${type}">${msg}</span>`;
+  panel.appendChild(line);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+// ─── Load Data Summary ─────────────────────────────────────────────────────────
+async function loadSummary() {
+  try {
+    const res = await fetch(`${API_BASE}/data/summary`);
+    if (!res.ok) return;
+    const data = await res.json();
+    document.getElementById('kpiRows').textContent = data.rows.toLocaleString();
+    addLog(`✓ Dataset loaded: ${data.rows} rows (${data.date_range.start} → ${data.date_range.end})`, 'success');
+  } catch (e) {
+    addLog('⚠ API unreachable — start the server with: python -m uvicorn api.server:app', 'warn');
+  }
+}
+
+// ─── Run Forecast ─────────────────────────────────────────────────────────────
+async function runForecast() {
+  const btn = document.getElementById('runBtn');
+  const overlay = document.getElementById('loadingOverlay');
+  const loadingText = document.getElementById('loadingText');
+  const horizon = parseInt(document.getElementById('horizonSelect').value);
+
+  btn.classList.add('loading');
+  btn.textContent = '⏳ Running...';
+  overlay.classList.add('active');
+
+  const steps = [
+    '⚙ Loading retail dataset...',
+    '📊 Engineering features...',
+    '🔄 Fitting ARIMA model...',
+    '🧠 Training Bidirectional LSTM...',
+    '📈 Generating forecasts...',
+    '✅ Rendering results...',
+  ];
+  let step = 0;
+  const stepInterval = setInterval(() => {
+    if (step < steps.length) {
+      loadingText.textContent = steps[step++];
+      addLog(steps[step - 1].slice(3), 'info');
+    }
+  }, 1800);
+
+  try {
+    const res = await fetch(`${API_BASE}/forecast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: selectedModel, horizon, save_db: false }),
+    });
+
+    clearInterval(stepInterval);
+
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    renderResults(data);
+    addLog(`✓ Forecast complete! Run ID: ${data.run_id}`, 'success');
+  } catch (e) {
+    clearInterval(stepInterval);
+    addLog(`✗ Error: ${e.message}`, 'error');
+    // Demo mode with fake data
+    addLog('⚡ Loading demo data instead...', 'warn');
+    renderDemoResults(horizon);
+  } finally {
+    overlay.classList.remove('active');
+    btn.classList.remove('loading');
+    btn.textContent = '▶ Run Forecast';
+  }
+}
+
+// ─── Render Results ───────────────────────────────────────────────────────────
+function renderResults(data) {
+  document.getElementById('kpiForecastDays').textContent = data.forecast_dates.length;
+  document.getElementById('forecastRunId').textContent = `run:${data.run_id}`;
+
+  const am = data.arima_metrics, lm = data.lstm_metrics;
+  if (am) document.getElementById('kpiArimaMae').textContent = am.MAE?.toFixed(1) || '—';
+  if (lm) document.getElementById('kpiLstmMae').textContent = lm.MAE?.toFixed(1) || '—';
+
+  const bestR2 = Math.max(am?.R2 || 0, lm?.R2 || 0);
+  document.getElementById('kpiBestR2').textContent = bestR2.toFixed(3);
+
+  // Forecast chart
+  const labels = data.forecast_dates;
+  const datasets = [];
+  if (data.arima_forecast)
+    datasets.push({
+      label: 'ARIMA',
+      data: data.arima_forecast,
+      borderColor: '#fb923c',
+      backgroundColor: 'rgba(251,146,60,0.08)',
+      borderDash: [6, 3],
+      tension: 0.4, fill: true,
+    });
+  if (data.lstm_forecast)
+    datasets.push({
+      label: 'LSTM',
+      data: data.lstm_forecast,
+      borderColor: '#a78bfa',
+      backgroundColor: 'rgba(167,139,250,0.08)',
+      tension: 0.4, fill: true,
+    });
+
+  renderForecastChart(labels, datasets);
+  renderR2Chart(am, lm);
+  renderMetricsTable(am, lm);
+}
+
+function renderForecastChart(labels, datasets) {
+  if (forecastChart) forecastChart.destroy();
+  const ctx = document.getElementById('forecastChart').getContext('2d');
+  forecastChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      animation: { duration: 1200, easing: 'easeInOutQuart' },
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 11 } } },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#475569', font: { size: 10 }, maxTicksLimit: 10 },
+          grid: { color: 'rgba(30,45,64,0.5)' },
+        },
+        y: {
+          ticks: { color: '#475569', font: { size: 10 } },
+          grid: { color: 'rgba(30,45,64,0.5)' },
+        },
+      },
+    },
+  });
+}
+
+function renderR2Chart(am, lm) {
+  if (r2Chart) r2Chart.destroy();
+  const ctx = document.getElementById('r2Chart').getContext('2d');
+  const labels = [], values = [], colors = [];
+  if (am) { labels.push('ARIMA'); values.push(am.R2 || 0); colors.push('#fb923c'); }
+  if (lm) { labels.push('LSTM'); values.push(lm.R2 || 0); colors.push('#a78bfa'); }
+
+  r2Chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'R² Score',
+        data: values,
+        backgroundColor: colors.map(c => c + '33'),
+        borderColor: colors,
+        borderWidth: 2,
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      animation: { duration: 1000, easing: 'easeOutBounce' },
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          min: 0, max: 1,
+          ticks: { color: '#475569' },
+          grid: { color: 'rgba(30,45,64,0.5)' },
+        },
+        x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderMetricsTable(am, lm) {
+  if (!am || !lm) return;
+  const metrics = [
+    { name: 'MAE', a: am.MAE, l: lm.MAE, lowerBetter: true },
+    { name: 'RMSE', a: am.RMSE, l: lm.RMSE, lowerBetter: true },
+    { name: 'MAPE %', a: am.MAPE, l: lm.MAPE, lowerBetter: true },
+    { name: 'R²', a: am.R2, l: lm.R2, lowerBetter: false },
+  ];
+
+  const tbody = document.getElementById('metricsBody');
+  tbody.innerHTML = metrics.map(m => {
+    const arimaWins = m.lowerBetter ? m.a < m.l : m.a > m.l;
+    const winner = arimaWins ? 'ARIMA' : 'LSTM';
+    const color = arimaWins ? '#fb923c' : '#a78bfa';
+    return `<tr>
+      <td style="color:var(--text);font-weight:600">${m.name}</td>
+      <td>${m.a?.toFixed(2)}</td>
+      <td>${m.l?.toFixed(2)}</td>
+      <td><span class="metric-winner" style="color:${color};border-color:${color}33;background:${color}11">✓ ${winner}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Demo Data (when API is offline) ──────────────────────────────────────────
+function renderDemoResults(horizon) {
+  const dates = [];
+  const now = new Date();
+  for (let i = 0; i < horizon; i++) {
+    const d = new Date(now); d.setDate(d.getDate() + i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  const arima = dates.map((_, i) => 1100 + i * 4 + Math.sin(i / 3) * 80 + Math.random() * 40);
+  const lstm = dates.map((_, i) => 1080 + i * 5 + Math.cos(i / 4) * 70 + Math.random() * 30);
+
+  document.getElementById('kpiRows').textContent = '730';
+  document.getElementById('kpiArimaMae').textContent = '42.3';
+  document.getElementById('kpiLstmMae').textContent = '31.7';
+  document.getElementById('kpiBestR2').textContent = '0.963';
+  document.getElementById('kpiForecastDays').textContent = horizon;
+  document.getElementById('forecastRunId').textContent = 'run:demo';
+
+  renderForecastChart(dates, [
+    { label: 'ARIMA', data: arima, borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,0.08)', borderDash: [6,3], tension: 0.4, fill: true },
+    { label: 'LSTM', data: lstm, borderColor: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.08)', tension: 0.4, fill: true },
+  ]);
+
+  const demoAm = { MAE: 42.3, RMSE: 58.1, MAPE: 3.8, R2: 0.941 };
+  const demoLm = { MAE: 31.7, RMSE: 44.2, MAPE: 2.9, R2: 0.963 };
+  renderR2Chart(demoAm, demoLm);
+  renderMetricsTable(demoAm, demoLm);
+  addLog('⚡ Demo mode — start python server for live forecasts', 'warn');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadSummary();
+
+  // Update forecast days KPI from dropdown
+  document.getElementById('horizonSelect').addEventListener('change', e => {
+    document.getElementById('kpiForecastDays').textContent = e.target.value;
+  });
+});
+</script>
+</body>
+</html>

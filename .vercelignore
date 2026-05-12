@@ -1,0 +1,16 @@
+# Heavy ML files — not needed on Vercel
+requirements.local.txt
+models/saved/
+static/plots/
+logs/
+tests/
+*.h5
+*.keras
+*.pkl
+*.log
+uv.lock
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.csv
